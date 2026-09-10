@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StyleMate AI — Your Personal AI Fashion Stylist</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="/">👗 StyleMate <span>AI</span></a>
+    <nav>
+      <a href="/">Chat</a>
+      <a href="/profile">Profile</a>
+      <a href="/outfits">Saved</a>
+      <a href="/history">History</a>
+    </nav>
+  </header>
+
+  {% if demo_mode %}
+  <div class="demo-banner">🎭 DEMO MODE — set ANTHROPIC_API_KEY in .env for live AI results.</div>
+  {% endif %}
+
+  <main class="layout">
+    <aside class="sidebar">
+      <button id="new-chat" class="btn-primary">+ New Chat</button>
+      <p class="label">Chat History</p>
+      <div id="chat-list"></div>
+    </aside>
+
+    <section class="chat">
+      <div class="chat-header">
+        <strong>StyleMate AI</strong>
+        <button id="clear-chat" class="btn-ghost">Clear</button>
+      </div>
+      <div id="messages" class="messages"></div>
+      <div class="quick-prompts" id="quick-prompts"></div>
+      <form id="composer" class="composer">
+        <input id="input" placeholder="Ask StyleMate anything…" autocomplete="off" />
+        <button class="btn-primary" type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

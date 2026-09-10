@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saved Outfits — StyleMate AI</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="/">👗 StyleMate <span>AI</span></a>
+    <nav><a href="/">Chat</a><a href="/profile">Profile</a><a href="/outfits">Saved</a><a href="/history">History</a></nav>
+  </header>
+  <main class="page">
+    <h1>Saved Outfits</h1>
+    <div class="card form">
+      <h3>Generate a new outfit</h3>
+      <label>Occasion<input id="occasion" placeholder="e.g. Interview" /></label>
+      <label>Season<input id="season" placeholder="e.g. Autumn" /></label>
+      <label>Colors<input id="colors" placeholder="e.g. Navy, cream" /></label>
+      <button class="btn-primary" id="gen">✨ Generate</button>
+    </div>
+    <div id="result"></div>
+    <h2>Your saved looks</h2>
+    <div id="saved"></div>
+  </main>
+  <script>
+    async function loadSaved() {
+      const r = await fetch('/api/outfits/saved'); const list = await r.json();
+      document.getElementById('saved').innerHTML = list.length ? list.map(card).join('') :
+        '<p class="muted">No saved outfits yet.</p>';
+    }
+    function card(o) {
+      const d = o.outfit_data;
+      return `<div class="card outfit"><h3>${o.name}</h3>
+        <p>👕 ${d.top}</p><p>👖 ${d.bottom}</p><p>👞 ${d.shoes}</p>
+        <p>⌚ ${d.accessories}</p><p>👜 ${d.bag}</p>
+        <p class="tip">✨ ${d.styleTip}</p>
+        <button onclick="del(${o.id})" class="btn-ghost">🗑️ Delete</button></div>`;
+    }
+    async function del(id) { await fetch('/api/outfits/' + id, { method:'DELETE' }); loadSaved(); }
+    document.getElementById('gen').addEventListener('click', async () => {
+      const body = { occasion: occasion.value, season: season.value, colors: colors.value };
+      const r = await fetch('/api/outfits/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json(); const d = data.outfit;
+      document.getElementById('result').innerHTML =
+        `<div class="card outfit"><h3>${d.outfit}</h3><p>👕 ${d.top}</p><p>👖 ${d.bottom}</p>
+         <p>👞 ${d.shoes}</p><p>⌚ ${d.accessories}</p><p>👜 ${d.bag}</p><p class="tip">✨ ${d.styleTip}</p>
+         <button id="save" class="btn-primary">💾 Save Outfit</button></div>`;
+      document.getElementById('save').addEventListener('click', async () => {
+        await fetch('/api/outfits/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: d.outfit, outfit_data: d }) });
+        loadSaved();
+      });
+    });
+    loadSaved();
+  </script>
+</body>
+</html>

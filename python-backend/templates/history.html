@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat History — StyleMate AI</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="/">👗 StyleMate <span>AI</span></a>
+    <nav><a href="/">Chat</a><a href="/profile">Profile</a><a href="/outfits">Saved</a><a href="/history">History</a></nav>
+  </header>
+  <main class="page">
+    <h1>Chat History</h1>
+    <div id="list"></div>
+  </main>
+  <script>
+    async function load() {
+      const r = await fetch('/api/chats'); const chats = await r.json();
+      document.getElementById('list').innerHTML = chats.length ? chats.map(c =>
+        `<div class="card row"><span>💬 ${c.title}</span>
+         <button class="btn-ghost" onclick="del(${c.id})">🗑️ Delete</button></div>`).join('')
+        : '<p class="muted">No conversations yet.</p>';
+    }
+    async function del(id) { await fetch('/api/chats/' + id, { method:'DELETE' }); load(); }
+    load();
+  </script>
+</body>
+</html>

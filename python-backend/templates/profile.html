@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profile — StyleMate AI</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="/">👗 StyleMate <span>AI</span></a>
+    <nav><a href="/">Chat</a><a href="/profile">Profile</a><a href="/outfits">Saved</a><a href="/history">History</a></nav>
+  </header>
+  <main class="page">
+    <h1>Your Style Profile</h1>
+    <form id="profile-form" class="card form">
+      <label>Name<input name="name" /></label>
+      <label>Preferred Fashion Style<input name="style_preferences" /></label>
+      <label>Favorite Colors<input name="favorite_colors" /></label>
+      <label>Colors You Don't Prefer<input name="disliked_colors" /></label>
+      <label>Preferred Occasions<input name="preferred_occasions" /></label>
+      <label>Clothing You Own<textarea name="clothing_items" rows="3"></textarea></label>
+      <button class="btn-primary" type="submit">Save Profile</button>
+      <p id="msg"></p>
+    </form>
+  </main>
+  <script>
+    async function load() {
+      const r = await fetch('/api/profile'); const p = await r.json();
+      for (const k in p) { const el = document.querySelector(`[name="${k}"]`); if (el) el.value = p[k] || ''; }
+    }
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = Object.fromEntries(new FormData(e.target).entries());
+      const r = await fetch('/api/profile', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(fd) });
+      document.getElementById('msg').textContent = r.ok ? 'Saved! ✅' : 'Error saving.';
+    });
+    load();
+  </script>
+</body>
+</html>
