@@ -66,14 +66,20 @@ def test_all():
     assert is_demo_mode() is True
     print(f"[OK] Key resolution OK (demo_mode={is_demo_mode()})")
 
-    # 6. Test outfit categories
-    for occ in ["interview", "party", "travel", "college", "casual"]:
+    # 6. Test outfit categories & custom occasions
+    for occ in ["interview", "party", "travel", "college", "casual", "wedding", "beach", "gym", "funeral", "hiking", "gallery opening"]:
         out = rule_based_demo_outfit({"occasion": occ}, profile)
         assert out["outfit"], f"Failed for {occ}"
         assert out["top"], f"Missing top for {occ}"
         assert out["bottom"], f"Missing bottom for {occ}"
         assert out["shoes"], f"Missing shoes for {occ}"
-    print("[OK] All occasion category fallbacks OK")
+    print("[OK] All 11+ occasion category fallbacks & custom occasions OK")
+
+    # 7. Test API key query reply
+    key_reply = rule_based_demo_reply("Which API key should I use?", profile)
+    assert "Anthropic Claude API Key" in key_reply
+    assert "sk-ant-api03-" in key_reply
+    print("[OK] API key guidance response OK")
 
     print("\n=== ALL LOGIC AND RESILIENCE TESTS PASSED! ===")
 

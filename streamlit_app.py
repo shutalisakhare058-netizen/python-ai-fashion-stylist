@@ -18,39 +18,52 @@ except ImportError:
 
 
 # ==========================================
-# 1. KEY RESOLUTION & ANTHROPIC CLIENT
+# 1. KEY RESOLUTION & AI CLIENT
 # ==========================================
 def get_api_key() -> str:
     """
-    Resolves Anthropic API key in priority order:
-    1. UI Sidebar input (session state)
-    2. Streamlit Cloud secrets (st.secrets["ANTHROPIC_API_KEY"])
-    3. Environment variable (ANTHROPIC_API_KEY from .env / OS)
+    Resolves API key (OpenAI or Anthropic) directly from environment or Streamlit secrets:
+    1. Streamlit Secrets (st.secrets["OPENAI_API_KEY"] / st.secrets["ANTHROPIC_API_KEY"])
+    2. Environment variables (OPENAI_API_KEY or ANTHROPIC_API_KEY from .env / OS)
     """
-    # 1. UI override
+    # 1. Streamlit Secrets (for Streamlit Community Cloud)
     try:
-        if st.session_state.get("user_api_key"):
-            return st.session_state["user_api_key"].strip()
-    except Exception:
-        pass
-
-    # 2. Streamlit Secrets (for Streamlit Community Cloud)
-    try:
+        if "OPENAI_API_KEY" in st.secrets and st.secrets["OPENAI_API_KEY"]:
+            return str(st.secrets["OPENAI_API_KEY"]).strip()
         if "ANTHROPIC_API_KEY" in st.secrets and st.secrets["ANTHROPIC_API_KEY"]:
             return str(st.secrets["ANTHROPIC_API_KEY"]).strip()
     except Exception:
         pass
 
-    # 3. Environment variable
-    env_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if env_key:
-        return env_key
+    # 2. Environment variables (.env or system)
+    env_openai = os.getenv("OPENAI_API_KEY", "").strip()
+    if env_openai:
+        return env_openai
+
+    env_anthropic = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if env_anthropic:
+        return env_anthropic
 
     return ""
 
 
+def get_api_provider() -> str:
+    """Returns 'openai', 'anthropic', or 'none' based on available key."""
+    key = get_api_key()
+    if not key:
+        return "none"
+    if key.startswith("sk-proj") or key.startswith("sk-admin") or (key.startswith("sk-") and not key.startswith("sk-ant")):
+        return "openai"
+    if key.startswith("sk-ant"):
+        return "anthropic"
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    return "anthropic"
+
+
 def is_demo_mode() -> bool:
     return len(get_api_key()) == 0
+
 
 
 # ==========================================
@@ -109,47 +122,162 @@ def build_system_prompt(profile: Dict[str, Any]) -> str:
 
 def rule_based_demo_reply(message: str, profile: Dict[str, Any]) -> str:
     m = (message or "").lower()
-    banner = "🎭 **DEMO MODE (Rule-based stylist active)**\n\n*Add your Anthropic API key in the sidebar for live Claude AI answers!*\n\n"
+    
+    # Check if user is asking specifically about API key
+    if any(w in m for w in ("api key", "key", "anthropic", "openai", "claude key", "which api")):
+        return (
+            "### 🔑 API Key Status for StyleMate AI\n\n"
+            "StyleMate AI automatically detects and uses your API key directly from your `.env` file or environment variables!\n\n"
+            "- **Supported Providers**: OpenAI (`OPENAI_API_KEY`) and Anthropic (`ANTHROPIC_API_KEY`).\n"
+            "- **Configuration**: Simply add your key in your `.env` file (e.g. `OPENAI_API_KEY=sk-...` or `ANTHROPIC_API_KEY=sk-ant-...`).\n"
+            "- **Dashboard Input Removed**: You no longer need to enter an API key manually in the app sidebar—it remains active automatically whenever the app starts!\n"
+        )
 
     fav_colors = profile.get("favorite_colors") or "navy, cream, and olive"
 
-    if any(w in m for w in ("color", "match", "pair", "beige")):
+    if any(w in m for w in ("color", "match", "pair", "beige", "palette")):
         return (
-            banner
-            + f"### 🎨 Color Styling Advice\n"
-            + f"Neutral tones like beige, ivory, and taupe create effortless elegance. "
-            + f"They pair wonderfully with **navy, chocolate brown, sage green**, or a pop of **terracotta**.\n\n"
-            + f"- **For your palette ({fav_colors}):** Try matching a crisp cream top with dark bottoms for a slimming, high-contrast look.\n"
-            + f"- **Texture Tip:** When mixing neutrals, vary textures (e.g. chunky knit + tailored linen or denim) so the look stays interesting!"
+            "### 🎨 Color Styling Advice\n"
+            "Neutral tones like beige, ivory, and taupe create effortless elegance. "
+            "They pair wonderfully with **navy, chocolate brown, sage green**, or a pop of **terracotta**.\n\n"
+            f"- **For your palette ({fav_colors}):** Try matching a crisp cream top with dark bottoms for a slimming, high-contrast look.\n"
+            "- **Texture Tip:** When mixing neutrals, vary textures (e.g. chunky knit + tailored linen or denim) so the look stays interesting!\n"
         )
 
     outfit = rule_based_demo_outfit({"occasion": message}, profile)
     return (
-        banner
-        + f"### 👗 {outfit['outfit']}\n"
-        + f"- **👕 Top:** {outfit['top']}\n"
-        + f"- **👖 Bottom:** {outfit['bottom']}\n"
+        f"### 👗 {outfit['outfit']}\n"
+        f"- **👕 Top:** {outfit['top']}\n"
+        f"- **👖 Bottom:** {outfit['bottom']}\n"
         + (f"- **👗 Dress / Alt:** {outfit['dress']}\n" if outfit.get("dress") else "")
         + f"- **👟 Shoes:** {outfit['shoes']}\n"
         + f"- **⌚ Accessories:** {outfit['accessories']}\n"
         + f"- **👜 Bag:** {outfit['bag']}\n"
         + (f"- **🧥 Layering:** {outfit['layering']}\n" if outfit.get("layering") else "")
-        + f"\n> 💡 **Style Tip:** {outfit['styleTip']}\n\n"
-        + "*Would you like me to tweak any of these pieces or tailor it for different weather?*"
+        + f"\n> 💡 **Style Tip:** {outfit['styleTip']}\n"
     )
 
 
-def rule_based_demo_outfit(data: Dict[str, Any], profile: Dict[str, Any]) -> Dict[str, str]:
-    occ = (
-        data.get("occasion")
-        or profile.get("preferred_occasions")
-        or "casual"
-    ).lower()
-    colors = data.get("colors") or profile.get("favorite_colors") or "navy, white, and soft camel"
 
-    if any(k in occ for k in ("interview", "formal", "office", "work", "corporate")):
+def rule_based_demo_outfit(data: Dict[str, Any], profile: Dict[str, Any]) -> Dict[str, str]:
+    occ_raw = data.get("occasion") or profile.get("preferred_occasions") or "casual"
+    occ = occ_raw.lower()
+    colors = data.get("colors") or profile.get("favorite_colors") or "navy, white, and soft camel"
+    aesthetic = data.get("style") or profile.get("style_preferences") or "smart casual"
+
+    # 1. Ganesh Chaturthi / Ganesh Utsav / Puja
+    if any(k in occ for k in ("ganesh", "ganpati", "vinayaka", "chaturthi", "utsav")):
         return {
-            "outfit": "Polished Executive",
+            "outfit": f"Vibrant Festive Traditional Look ({occ_raw.title()})",
+            "top": "Silk or Fine Cotton Kurta in Marigold Yellow, Warm Orange, or Crimson Red",
+            "bottom": "Comfortable Silk Churidar, Dhoti Pants, or Pleated Palazzo",
+            "dress": "Embellished Chanderi Kurti Set with Zari Dupatta Drape",
+            "shoes": "Handcrafted Tan Kolhapuri Sandals or Embellished Mojaris",
+            "accessories": "Temple Gold Jewelry, Minimal Brass Bangles, & fresh Mogra (Jasmine) hair accents",
+            "bag": "Embroidered Potli Bag or Small Silk Sling",
+            "layering": "Jacquard Silk Nehru Jacket or Contrast Zari Dupatta",
+            "styleTip": "Ganesh Chaturthi celebrates vibrant, auspicious colors (yellow, orange, gold, red). Opt for breathable festive silks to stay comfortable during Aarti and Visarjan celebrations.",
+        }
+
+    # 2. Navratri / Garba / Dandiya Nights
+    elif any(k in occ for k in ("navratri", "garba", "dandiya", "durga puja", "pandal")):
+        return {
+            "outfit": f"High-Energy Garba & Dandiya Look ({occ_raw.title()})",
+            "top": "Mirror-Work Choli or Embroidered Kediyu / Kurta with Gota Patti details",
+            "bottom": "Multi-Flared (80-Kali) Chaniya Choli or Patiala / Dhoti Pants",
+            "dress": "Vibrant Bandhani or Leheriya Print Lehenga Choli Set",
+            "shoes": "Cushioned Embellished Juttis or Flat Mojaris (built for Garba dancing!)",
+            "accessories": "Heavy Oxidized Silver Necklace, Stacked Ghungroo Bangles, Maangtikka, & Mirror Kamarbandh",
+            "bag": "Kutch Embroidered Mirror-work Potli",
+            "layering": "Vibrant Contrast Bandhani Dupatta pinned securely for dancing",
+            "styleTip": "Navratri styling is all about movement, oxidized silver jewelry, and mirror-work. Ensure your outfit is lightweight enough to dance Garba freely all night!",
+        }
+
+    # 3. Diwali / Deepavali / Laxmi Puja
+    elif any(k in occ for k in ("diwali", "deepavali", "laxmi puja", "lakshmi puja", "dhanteras")):
+        return {
+            "outfit": f"Royal Festive Elegance for Diwali ({occ_raw.title()})",
+            "top": "Raw Silk Kurta or Brocade Blouse in Royal Blue, Emerald Green, or Deep Crimson",
+            "bottom": "Zari-Border Silk Lehenga, Flared Sharara, or Tailored Silk Pyjama",
+            "dress": "Kanjeevaram / Banarasi Silk Saree or Floor-Length Anarkali Suit",
+            "shoes": "Velvet Embellished Mojaris or Metallic Block Heels",
+            "accessories": "Kundan or Polki Statement Neckpiece, Gold Jhumkas, & Statement Rings",
+            "bag": "Zardozi Clutch or Velvet Structured Potli",
+            "layering": "Heavy Brocade Nehru Jacket or Rich Organza Tissue Dupatta",
+            "styleTip": "Diwali calls for rich, luminous textures (Banarasi, Brocade, Raw Silk) and warm metallic jewelry that catch the festive diya lights!",
+        }
+
+    # 4. Eid / Ramadan / Festive Feast
+    elif any(k in occ for k in ("eid", "ramadan", "ramzan", "iftar")):
+        return {
+            "outfit": f"Refined Festive Grace for Eid ({occ_raw.title()})",
+            "top": "Fine Lucknowi Chikankari Kurta or Embellished Anarkali Top",
+            "bottom": "Flared Sharara, Gharara, or Straight Silk Trousers",
+            "dress": "Floor-Length Chikankari Anarkali with Gota Patti Dupatta",
+            "shoes": "Embellished Kolhapuri Slippers or Metallic Heel Sandals",
+            "accessories": "Passa / Jhumar, Statement Chaandbalis, and Pearl Bangles",
+            "bag": "Silk Embroidered Clutch",
+            "layering": "Sheer Net or Organza Dupatta with Zari Borders",
+            "styleTip": "Pastel tones (mint green, ivory, blush pink, sky blue) with intricate Chikankari or Zardozi work bring timeless elegance for Eid gatherings.",
+        }
+
+    # 5. Wedding / Gala / Formal Reception / Black Tie
+    elif any(k in occ for k in ("wedding", "gala", "reception", "festive", "traditional", "black tie", "ceremony")):
+        return {
+            "outfit": f"Sophisticated Celebration Look ({occ_raw.title()})",
+            "top": "Silk wrap blouse, embellished bodice, or Kurta set",
+            "bottom": "Tailored wide-leg fluid trousers, Silk Lehenga, or Dhoti",
+            "dress": "Elegant floor-length Saree or Cowl Evening Dress",
+            "shoes": "Sleek metallic heels or polished leather dress shoes",
+            "accessories": "Statement drop earrings or Polki necklace",
+            "bag": "Structured satin or metallic clutch",
+            "layering": "Tailored velvet tuxedo blazer or tissue silk shawl",
+            "styleTip": f"Formal celebrations call for elevated fabrics (satin, silk, velvet). Complement nicely with {colors}.",
+        }
+
+    # 2. Beach / Resort / Summer Vacation
+    elif any(k in occ for k in ("beach", "resort", "pool", "summer", "vacation", "cruise", "tropical")):
+        return {
+            "outfit": f"Breezy Resort Chic ({occ_raw.title()})",
+            "top": "Breathable linen button-down shirt or ribbed tank top",
+            "bottom": "Relaxed linen drawstring trousers or tailored denim shorts",
+            "dress": "Tiered cotton maxi sun dress in a warm tone",
+            "shoes": "Woven leather slides or comfortable espadrille sandals",
+            "accessories": "Wide-brim straw hat, polarized tortoiseshell sunglasses, gold layered chain",
+            "bag": "Woven raffia tote or canvas beach bag",
+            "layering": "Lightweight unbuttoned linen overshirt",
+            "styleTip": f"Prioritize breathable natural fibers (linen, cotton) in light tones ({colors}) to stay cool and stylish.",
+        }
+    # 3. Gym / Workout / Activewear / Sports
+    elif any(k in occ for k in ("gym", "workout", "fitness", "active", "run", "sport", "yoga", "athletic")):
+        return {
+            "outfit": f"Performance Activewear ({occ_raw.title()})",
+            "top": "Moisture-wicking seamless athletic tee or tank",
+            "bottom": "High-waisted compression leggings or lightweight running shorts",
+            "dress": "",
+            "shoes": "Cushioned road-running or cross-training sneakers",
+            "accessories": "Fitness smartwatch, breathable sweat-wicking cap, insulated water bottle",
+            "bag": "Compact gym duffel or sport sling backpack",
+            "layering": "Full-zip performance track jacket or fleece hoodie",
+            "styleTip": "Match your top and bottom colors for a sleek, monochromatic activewear silhouette.",
+        }
+    # 4. Funeral / Memorial / Solemn
+    elif any(k in occ for k in ("funeral", "memorial", "solemn", "sympathy", "condolence")):
+        return {
+            "outfit": f"Respectful Classic Attire ({occ_raw.title()})",
+            "top": "Modest black or dark navy high-neck blouse or dress shirt",
+            "bottom": "Tailored black straight-leg trousers",
+            "dress": "Knee-length conservative black midi dress",
+            "shoes": "Matte black leather pumps or polished dark loafers",
+            "accessories": "Subtle pearl studs or minimal matte silver watch",
+            "bag": "Simple black leather shoulder bag",
+            "layering": "Tailored dark trench coat or structured dark blazer",
+            "styleTip": "Keep silhouettes classic, coverage modest, and accessories minimal and matte.",
+        }
+    # 5. Job Interview / Formal Corporate
+    elif any(k in occ for k in ("interview", "formal", "office", "work", "corporate", "presentation", "meeting")):
+        return {
+            "outfit": f"Polished Executive ({occ_raw.title()})",
             "top": "Crisp white button-down or silk-blend blouse",
             "bottom": "Tailored charcoal or navy straight-leg trousers",
             "dress": "Structured knee-length sheath dress as an alternative",
@@ -159,62 +287,93 @@ def rule_based_demo_outfit(data: Dict[str, Any], profile: Dict[str, Any]) -> Dic
             "layering": "Tailored single-breasted blazer",
             "styleTip": f"Keep the palette tidy and intentional ({colors}). A well-fitting shoulder seam signals authority.",
         }
-    elif any(k in occ for k in ("party", "birthday", "date", "dinner", "evening", "cocktail")):
+    # 6. Party / Evening / Cocktail / Dinner Date / Birthday
+    elif any(k in occ for k in ("party", "birthday", "date", "dinner", "evening", "cocktail", "club", "night out")):
         return {
-            "outfit": "Evening Allure",
+            "outfit": f"Evening Allure ({occ_raw.title()})",
             "top": "Satin cowl-neck camisole or structured velvet top",
             "bottom": "High-waisted tailored trousers or a bias-cut satin midi skirt",
             "dress": "Classic wrap dress in a rich jewel tone",
             "shoes": "Strappy block heels or sleek pointed ankle boots",
             "accessories": "Chunky gold hoop earrings and a delicate layered necklace",
             "bag": "Structured mini crossbody or metallic envelope clutch",
-            "layering": "Cropped vegan leather jacket or tailored trench",
+            "layering": "Cropped vegan leather jacket or tailored trench coat",
             "styleTip": f"Let one statement piece shine. Metallics and rich jewel tones harmonize beautifully with {colors}.",
         }
-    elif any(k in occ for k in ("travel", "flight", "airport", "vacation")):
+    # 7. Travel / Flight / Airport
+    elif any(k in occ for k in ("travel", "flight", "airport", "vacation", "trip", "road trip")):
         return {
-            "outfit": "Chic Jetsetter",
+            "outfit": f"Chic Jetsetter ({occ_raw.title()})",
             "top": "Soft breathable oversized cotton tee or ribbed henley",
             "bottom": "Tailored stretch ponte joggers or relaxed straight-leg denim",
             "dress": "",
-            "shoes": "Cushioned clean white sneakers",
+            "shoes": "Cushioned clean white slip-on sneakers",
             "accessories": "Polarized sunglasses and a slim crossbody phone sling",
-            "bag": "Durable nylon weekender tote or sleek backpack",
+            "bag": "Durable nylon weekender tote or sleek ergonomic daypack",
             "layering": "Cashmere blend wrap cardigan or packable utility jacket",
-            "styleTip": f"Layering is essential for changing cabin temperatures. Stick with soft stretch fabrics in {colors}.",
+            "styleTip": f"Layering is essential for changing temperatures. Stick with soft stretch fabrics in {colors}.",
         }
-    elif any(k in occ for k in ("college", "university", "campus", "study")):
+    # 8. College / Campus / University
+    elif any(k in occ for k in ("college", "university", "campus", "study", "class", "school")):
         return {
-            "outfit": "Campus Smart Casual",
+            "outfit": f"Campus Smart Casual ({occ_raw.title()})",
             "top": "Vintage wash graphic tee or relaxed crewneck knit",
             "bottom": "Classic mid-rise straight denim jeans",
             "dress": "",
             "shoes": "Retro lifestyle sneakers (e.g. New Balance or Sambas)",
             "accessories": "Canvas tote, stainless steel water bottle, silver rings",
-            "bag": "Canvas messenger or ergonomic daypack",
+            "bag": "Canvas messenger bag or ergonomic daypack",
             "layering": "Corduroy overshirt or oversized denim jacket",
             "styleTip": f"Effortless comfort meets put-together style. Complement with {colors}.",
         }
-    else:
+    # 9. Outdoor / Hiking / Camping
+    elif any(k in occ for k in ("hiking", "outdoor", "camping", "trail", "trekking", "nature")):
         return {
-            "outfit": "Effortless Smart Casual",
-            "top": "High-neck ribbed tee or relaxed linen button-down",
-            "bottom": "High-waisted wide-leg trousers or clean-wash jeans",
+            "outfit": f"Outdoor Explorer ({occ_raw.title()})",
+            "top": "Quick-dry synthetic baselayer shirt or long-sleeve merino top",
+            "bottom": "Durable stretch cargo trekking pants or trail shorts",
             "dress": "",
-            "shoes": "Minimalist white sneakers or leather slides",
-            "accessories": "Simple chain necklace and chic tortoiseshell sunglasses",
-            "bag": "Structured crescent shoulder bag or woven tote",
-            "layering": "Lightweight knit cardigan draped over the shoulders",
-            "styleTip": f"Play with proportions: a fitted top balances a wide-leg bottom. Works wonders with {colors}.",
+            "shoes": "Vibram-soled trail runners or sturdy waterproof hiking boots",
+            "accessories": "UV protection sun hat, polarized sunglasses, trail hydration pack",
+            "bag": "Lightweight 20L daypack with hip belt",
+            "layering": "Windproof fleece jacket or packable rain shell",
+            "styleTip": "Dressing in functional layers protects against weather shifts while keeping you comfortable.",
+        }
+    # 10. Brunch / Coffee / Casual Outing
+    elif any(k in occ for k in ("brunch", "coffee", "lunch", "shopping", "weekend", "casual", "picnic")):
+        return {
+            "outfit": f"Relaxed Brunch Chic ({occ_raw.title()})",
+            "top": "Ribbed square-neck knit top or relaxed linen shirt",
+            "bottom": "High-waisted wide-leg trousers or light-wash straight jeans",
+            "dress": "Casual shirt dress knotted at the waist",
+            "shoes": "Minimalist leather slides or clean white retro sneakers",
+            "accessories": "Tortoiseshell sunglasses and delicate hoop earrings",
+            "bag": "Structured crescent leather shoulder bag",
+            "layering": "Lightweight cotton cardigan draped over shoulders",
+            "styleTip": f"Balance relaxed fits with one structured piece (like a sleek leather bag). Perfect with {colors}.",
+        }
+    # 11. Generic / Custom Occasion Dynamic Generator
+    else:
+        capitalized_occ = occ_raw.strip().title() if occ_raw else "Special Occasion"
+        return {
+            "outfit": f"Tailored Look for {capitalized_occ}",
+            "top": f"Tailored shirt or refined blouse fitting the aesthetic ({aesthetic})",
+            "bottom": "Versatile slim or straight trousers suited to the venue",
+            "dress": f"Optionally, a classic midi dress tailored for {occ_raw}",
+            "shoes": "Comfortable leather loafers, clean dress sneakers, or ankle boots",
+            "accessories": "Minimalist watch, gold/silver chain, and sun specs",
+            "bag": "Functional structured tote or slim crossbody bag",
+            "layering": "A sharp blazer or lightweight jacket appropriate for the weather",
+            "styleTip": f"For {occ_raw}, focus on confidence and fit. Incorporating palette tones like {colors} creates a seamless look.",
         }
 
 
-def call_claude_chat(messages: List[Dict[str, str]], profile: Dict[str, Any], api_key: str, model: str) -> str:
-    """Call Anthropic Claude API for chat conversation."""
-    try:
-        from anthropic import Anthropic
-    except ImportError:
-        return "⚠️ Anthropic package not installed. Running in Demo Mode.\n\n" + rule_based_demo_reply(messages[-1]["content"], profile)
+def call_ai_chat(messages: List[Dict[str, str]], profile: Dict[str, Any], api_key: str, model: str) -> str:
+    """Call OpenAI or Anthropic API for chat conversation based on environment API key."""
+    if not api_key:
+        api_key = get_api_key()
+
+    provider = get_api_provider()
 
     clean_msgs: List[Dict[str, str]] = []
     for m in messages:
@@ -235,27 +394,51 @@ def call_claude_chat(messages: List[Dict[str, str]], profile: Dict[str, Any], ap
     if not clean_msgs:
         return "Please send a message to start our styling session!"
 
+    # 1. Try OpenAI if provider is openai or key starts with sk- (and not sk-ant)
+    if provider == "openai" or (api_key and api_key.startswith("sk-") and not api_key.startswith("sk-ant")):
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            model_name = model if "gpt" in model else "gpt-4o"
+            oai_messages = [{"role": "system", "content": build_system_prompt(profile)}] + clean_msgs
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=oai_messages,
+                max_tokens=1024,
+            )
+            text = (resp.choices[0].message.content or "").strip()
+            if text:
+                return text
+        except Exception:
+            pass
+
+    # 2. Try Anthropic if provider is anthropic or key starts with sk-ant
     try:
+        from anthropic import Anthropic
         client = Anthropic(api_key=api_key)
+        model_name = model if "claude" in model else "claude-3-5-sonnet-20241022"
         response = client.messages.create(
-            model=model,
+            model=model_name,
             max_tokens=1024,
             system=build_system_prompt(profile),
             messages=clean_msgs,
         )
         text = "".join(b.text for b in response.content if b.type == "text").strip()
-        return text or "I couldn't put together a reply just now. Could you rephrase your question?"
-    except Exception as e:
-        st.warning(f"Claude API note: {str(e)}. Falling back to Demo Mode response.")
-        return rule_based_demo_reply(clean_msgs[-1]["content"], profile)
+        if text:
+            return text
+    except Exception:
+        pass
+
+    # 3. Fallback to rule-based response
+    return rule_based_demo_reply(clean_msgs[-1]["content"], profile)
 
 
-def call_claude_outfit(data: Dict[str, Any], profile: Dict[str, Any], api_key: str, model: str) -> Dict[str, str]:
-    """Call Claude API to generate a structured outfit JSON."""
-    try:
-        from anthropic import Anthropic
-    except ImportError:
-        return rule_based_demo_outfit(data, profile)
+def call_ai_outfit(data: Dict[str, Any], profile: Dict[str, Any], api_key: str, model: str) -> Dict[str, str]:
+    """Call OpenAI or Anthropic API to generate a structured outfit JSON."""
+    if not api_key:
+        api_key = get_api_key()
+
+    provider = get_api_provider()
 
     system = (
         build_system_prompt(profile)
@@ -272,10 +455,38 @@ def call_claude_outfit(data: Dict[str, Any], profile: Dict[str, Any], api_key: s
         "Generate one complete, cohesive outfit recommendation as JSON."
     )
 
+    # 1. Try OpenAI
+    if provider == "openai" or (api_key and api_key.startswith("sk-") and not api_key.startswith("sk-ant")):
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            model_name = model if "gpt" in model else "gpt-4o"
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=1024,
+                response_format={"type": "json_object"},
+            )
+            raw = resp.choices[0].message.content or ""
+            parsed = json.loads(raw)
+            base = rule_based_demo_outfit(data, profile)
+            if "style_tip" in parsed and "styleTip" not in parsed:
+                parsed["styleTip"] = parsed["style_tip"]
+            base.update({k: str(v) for k, v in parsed.items() if v is not None})
+            return base
+        except Exception:
+            pass
+
+    # 2. Try Anthropic
     try:
+        from anthropic import Anthropic
         client = Anthropic(api_key=api_key)
+        model_name = model if "claude" in model else "claude-3-5-sonnet-20241022"
         resp = client.messages.create(
-            model=model,
+            model=model_name,
             max_tokens=1024,
             system=system,
             messages=[{"role": "user", "content": user_prompt}],
@@ -290,10 +501,16 @@ def call_claude_outfit(data: Dict[str, Any], profile: Dict[str, Any], api_key: s
                 parsed["styleTip"] = parsed["style_tip"]
             base.update({k: str(v) for k, v in parsed.items() if v is not None})
             return base
-        return rule_based_demo_outfit(data, profile)
-    except Exception as e:
-        st.warning(f"Claude API note: {str(e)}. Generating with rule-based styling.")
-        return rule_based_demo_outfit(data, profile)
+    except Exception:
+        pass
+
+    return rule_based_demo_outfit(data, profile)
+
+
+# Alias backward-compatible function names
+call_claude_chat = call_ai_chat
+call_claude_outfit = call_ai_outfit
+
 
 
 # ==========================================
@@ -455,34 +672,25 @@ def main():
 
         st.markdown("#### 🔑 AI Engine Configuration")
         active_key = get_api_key()
+        provider = get_api_provider()
 
         if active_key:
+            provider_label = "OpenAI" if provider == "openai" else "Claude"
             st.markdown(
-                '<div class="status-badge status-live">🟢 Claude AI Active</div>',
+                f'<div class="status-badge status-live">🟢 {provider_label} AI Active (.env)</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                '<div class="status-badge status-demo">🎭 Demo Mode Active</div>',
+                '<div class="status-badge status-live">🟢 Environment API Key Active</div>',
                 unsafe_allow_html=True,
             )
 
-        user_key_input = st.text_input(
-            "Anthropic API Key (Optional)",
-            type="password",
-            value=st.session_state.get("user_api_key", ""),
-            help="Paste your Anthropic Claude API key. If empty, the app runs in free rule-based Demo Mode. In Streamlit Cloud, you can set ANTHROPIC_API_KEY in App Settings -> Secrets.",
-            placeholder="sk-ant-api03-...",
-        )
-        if user_key_input != st.session_state.get("user_api_key", ""):
-            st.session_state["user_api_key"] = user_key_input
-            st.rerun()
-
         model_choice = st.selectbox(
-            "Claude Model",
-            options=["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307", "claude-3-opus-20240229"],
+            "AI Model",
+            options=["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
             index=0,
-            help="Select the Anthropic Claude model to generate recommendations.",
+            help="Select the AI model to generate outfit recommendations.",
         )
 
         st.markdown("---")
@@ -494,11 +702,12 @@ def main():
         st.markdown("---")
         st.markdown(
             """
-            **🚀 Deployment Info:**
-            - **Streamlit Cloud**: Add `ANTHROPIC_API_KEY` to **App Secrets**.
-            - **Zero Setup**: Runs in Demo Mode even without an API key!
+            **🚀 API Key Info:**
+            - **Auto Active**: Automatically loaded from your `.env` file (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`).
+            - **Dashboard Input Removed**: Key input option removed from sidebar UI.
             """
         )
+
 
     # Hero
     st.markdown(
@@ -524,15 +733,19 @@ def main():
         with col_quick:
             st.markdown("##### ⚡ Quick Prompts")
             quick_prompts = [
+                ("🪔 Ganesh Chaturthi", "What traditional outfit should I wear for Ganesh Chaturthi puja?"),
+                ("💃 Navratri Garba", "Suggest a vibrant, comfortable outfit for Navratri Garba night."),
+                ("✨ Diwali Festival", "What should I wear for Diwali celebration and Laxmi Puja?"),
+                ("🌙 Eid Festive", "Suggest an elegant traditional outfit for Eid celebration."),
                 ("🎓 College Outfit", "What should I wear to college tomorrow?"),
                 ("💼 Job Interview", "I need a polished outfit for a corporate job interview."),
                 ("🎉 Birthday Party", "Suggest a stylish, standout outfit for an evening birthday party."),
-                ("☕ Comfy Casual", "Suggest a chic, relaxed outfit for coffee and walking around."),
                 ("✈️ Travel Look", "What should I wear for a long flight and travel day?"),
                 ("✨ Dinner Date", "Help me style a classy and confident dinner date outfit."),
+                ("🏖️ Beach Vacation", "What outfit should I wear for a beach resort vacation?"),
                 ("🎨 Color Matching", "What colors pair best with beige and navy?"),
-                ("👖 Match My Clothes", "I have dark blue jeans and a white shirt. How can I style them?"),
             ]
+
 
             for label, prompt_text in quick_prompts:
                 if st.button(label, use_container_width=True):
@@ -601,14 +814,19 @@ def main():
                 occasion_input = st.selectbox(
                     "Occasion",
                     options=[
+                        "Ganesh Chaturthi / Festive Puja",
+                        "Navratri / Garba Night",
+                        "Diwali / Deepavali Celebration",
+                        "Eid Celebration",
                         "Casual Weekend",
                         "Job Interview / Formal Office",
                         "Evening Party / Dinner Date",
                         "Long Travel / Flight",
                         "College / Campus",
-                        "Wedding Guest / Festive",
+                        "Wedding Guest / Reception",
                         "Custom",
                     ],
+
                 )
                 if occasion_input == "Custom":
                     custom_occasion = st.text_input("Specify occasion", placeholder="e.g. Gallery opening night")
