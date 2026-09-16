@@ -644,7 +644,6 @@ def main():
                 "Clothes You Own to Incorporate (Optional)",
                 value=st.session_state.profile.get("clothing_items", ""),
                 placeholder="e.g. Tan trench coat, white Stan Smith sneakers, dark wash Levi's jeans",
-                rows=2,
             )
 
             submit_gen = st.form_submit_button("✨ Generate Outfit", use_container_width=True, type="primary")
@@ -781,7 +780,6 @@ def main():
                 "Clothes in Your Wardrobe",
                 value=st.session_state.profile.get("clothing_items", ""),
                 placeholder="e.g. Navy tailored blazer, black Chelsea boots, white linen shirts, dark wash Levi's 501s",
-                rows=3,
             )
 
             save_profile_btn = st.form_submit_button("💾 Save Profile", use_container_width=True, type="primary")
